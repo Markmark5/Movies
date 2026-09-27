@@ -66,7 +66,7 @@ dialog::backdrop{background:rgba(10,12,30,.75)}
 .backdrop{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
 .fav{background:none;border:1px solid var(--line);border-radius:999px;padding:6px 14px;cursor:pointer;margin-top:10px}
 .fav[aria-pressed="true"]{background:var(--accent);color:#1c2140;border-color:var(--accent);font-weight:600}
-.film{position:relative}
+.film{position:relative;display:flex;flex-direction:column;justify-content:flex-start;align-self:start}
 .film .heart{position:absolute;top:6px;right:6px;background:var(--accent);color:#1c2140;border-radius:999px;width:26px;height:26px;display:grid;place-items:center;font-size:.85rem}
 .ftoggle{position:absolute;right:52px;top:16px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.8rem;cursor:pointer}
 header.collapsed #filters, header.collapsed .sub{display:none}
@@ -96,7 +96,10 @@ header{position:sticky}
 .name{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 11px;font-size:.85rem;cursor:pointer}
 .name.dir{border-color:var(--accent);color:var(--accent);font-weight:600}
 .dnav{position:sticky;top:0;z-index:2;background:var(--surface);padding:10px 14px;border-bottom:1px solid var(--line)}
-.back{background:none;border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:5px 14px;cursor:pointer;font-size:.9rem;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.back{display:inline-flex;align-items:center;gap:6px;max-width:100%;background:rgba(242,177,52,.14);border:0;color:var(--accent);border-radius:999px;padding:6px 14px 6px 10px;cursor:pointer;font-size:.9rem;font-weight:600;line-height:1.2}
+.back:hover{background:rgba(242,177,52,.24)}
+.back svg{flex:0 0 auto}
+.back span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dgrid{margin-top:12px;grid-template-columns:repeat(3,minmax(0,1fr))}
 .dgrid .film img,.dgrid .film .noimg{background:var(--bg)}
 .offlist{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
@@ -490,7 +493,9 @@ function dlgLoading(back){
   $("dlg").scrollTop = 0;
   return ++dlgToken;
 }
-const backBtn = back => back ? `<div class="dnav"><button class="back" onclick="history.back()">‹ ${esc(back.label)}</button></div>` : "";
+const backBtn = back => back ? `<div class="dnav"><button class="back" onclick="history.back()" aria-label="Back to ${esc(back.label)}">`
+  + `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+  + `<span>${esc(back.label)}</span></button></div>` : "";
 window.addEventListener("popstate", () => {
   if(!$("dlg").open || dlgDepth <= 0) return;
   dlgDepth--;
