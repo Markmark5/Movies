@@ -20,6 +20,7 @@
   padding-bottom:env(safe-area-inset-bottom,0px);
 }
 *,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--text);
   font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45}
@@ -80,6 +81,11 @@ header.collapsed .gear{top:6px}
 .gear{position:absolute;right:16px;top:14px;background:none;border:0;color:var(--muted);font-size:1.3rem;cursor:pointer}
 header{position:sticky}
 .hwrap{position:relative}
+.dayhead{grid-column:1/-1;margin:10px 0 0;font-size:1rem;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:4px}
+.dayhead:first-child{margin-top:0}
+.note{grid-column:1/-1;color:var(--muted);font-size:.8rem}
+.plogos{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.plogos img{width:18px;height:18px;border-radius:4px}
 </style>
 </head>
 <body>
@@ -119,6 +125,8 @@ header{position:sticky}
       <option value="popularity.desc">Popular</option>
       <option value="vote_average.desc">Top rated</option>
       <option value="primary_release_date.desc">Newest</option>
+      <option value="new7">New this week</option>
+      <option value="new30">New this month</option>
       <option value="favourites">♥ Favourites</option>
     </select>
     </div>
@@ -285,8 +293,64 @@ function showFavourites(){
   list.forEach(f=>addCard(f.m, f.rating));
   $("status").textContent = list.length ? "" : "No favourites yet. Tap a film, then tap ♡ Add to favourites.";
 }
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const dayOffset = n => { const d = new Date(); d.setDate(d.getDate()+n); return ymd(d); };
+let arrivalsData;
+async function loadArrivals(){
+  if(arrivalsData) return arrivalsData;
+  try{ const r = await fetch(`data/arrivals.json?t=${dayOffset(0)}`); if(r.ok) arrivalsData = await r.json(); }catch(e){}
+  return arrivalsData;
+}
+function dayLabel(d){
+  if(d===dayOffset(0)) return "Today";
+  if(d===dayOffset(-1)) return "Yesterday";
+  return new Date(d+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+}
+async function showArrivals(days){
+  const my = ++token; $("grid").innerHTML=""; $("more").hidden=true; $("status").textContent="Loading…";
+  const data = await loadArrivals();
+  if(my!==token) return;
+  if(!data || !(data.items||[]).length){ $("status").textContent="New arrivals start building from the first daily check. Check back tomorrow."; return; }
+  const ids = new Set(activeProviderIds().map(String));
+  if(!ids.size){ $("status").textContent="Pick at least one service."; return; }
+  const cutoff = dayOffset(-(days-1)), dec = $("decade").value, min = parseFloat($("minRating").value), useImdb = !!S.omdb;
+  const list = [];
+  for(const m of data.items){
+    const on = Object.entries(m.arrivals||{}).filter(([p,d])=>ids.has(p) && d>=cutoff);
+    if(!on.length) continue;
+    if($("englishOnly").checked && m.original_language!=="en") continue;
+    if($("britishOnly").checked && !(m.origin_country||[]).includes("GB")) continue;
+    if([...S.genres].some(g=>!(m.genre_ids||[]).includes(g))) continue;
+    const yr = +(m.release_date||"").slice(0,4);
+    if(dec && !(yr>=+dec && yr<=+dec+9)) continue;
+    list.push({m, date: on.map(x=>x[1]).sort().at(-1), provs: on.map(x=>+x[0])});
+  }
+  list.sort((a,b)=>b.date.localeCompare(a.date) || b.m.vote_count-a.m.vote_count);
+  if(data.baselineDate && dayOffset(-7) < data.baselineDate)
+    $("grid").insertAdjacentHTML("beforeend", `<div class="note">Tracking since ${esc(dayLabel(data.baselineDate))}</div>`);
+  let lastDay = "", shown = 0;
+  // Look up IMDb ratings a few at a time, but render in order
+  for(let i=0; i<list.length; i+=6){
+    const chunk = list.slice(i,i+6);
+    const ratings = useImdb ? await Promise.all(chunk.map(x=>imdbRating(x.m.id))) : [];
+    if(my!==token) return;
+    chunk.forEach(({m,date,provs},k)=>{
+      let rating = {r:m.vote_average||0, src:"TMDB"};
+      const r = ratings[k];
+      if(r){ if(r.r < min || r.votes < +$("minVotes").value) return; rating = {r:r.r, src:"IMDb", id:r.id, votes:r.votes}; }
+      else if(rating.r < min) return;
+      if(date!==lastDay){ lastDay=date; $("grid").insertAdjacentHTML("beforeend", `<h2 class="dayhead">${esc(dayLabel(date))}</h2>`); }
+      const card = addCard(m, rating);
+      card.insertAdjacentHTML("beforeend", `<div class="plogos">${provs.map(id=>S.allProviders.find(p=>p.id===id)).filter(Boolean)
+        .map(p=>`<img src="${IMG}w92${p.logo}" alt="${esc(p.name)}" title="${esc(p.name)}">`).join("")}</div>`);
+      shown++;
+    });
+  }
+  $("status").textContent = shown ? "" : `No new arrivals match in the last ${days} days. Try lowering the rating or adding a service.`;
+}
 async function search(reset){
   if($("sort").value==="favourites"){ showFavourites(); return; }
+  if($("sort").value==="new7" || $("sort").value==="new30"){ showArrivals($("sort").value==="new7" ? 7 : 30); return; }
   const my = ++token;
   if(reset){ S.page=1; S.seen.clear(); $("grid").innerHTML=""; }
   const ids = activeProviderIds();
@@ -342,6 +406,7 @@ function addCard(m, rating){
   b.dataset.id = m.id;
   b.onclick=()=>openFilm(m, rating);
   $("grid").appendChild(b);
+  return b;
 }
 
 async function openFilm(m, rating){
