@@ -145,7 +145,7 @@ header{position:sticky}
 <main>
   <div class="grid" id="grid"></div>
   <div class="status" id="status"></div>
-  <button class="more" id="more" hidden>Load more films</button>
+  <div id="more" hidden style="height:1px"></div>
 </main>
 </div>
 
@@ -459,7 +459,8 @@ $("decade").value = store("decade") || "";
 $("decade").addEventListener("change", e=>store("decade", e.target.value));
 $("britishOnly").addEventListener("change", e=>store("britishOnly", e.target.checked?"1":"0"));
 $("decade").onchange = $("sort").onchange = $("britishOnly").onchange = $("englishOnly").onchange = $("freeOnly").onchange = () => search(true);
-$("more").onclick = () => search(false);
+// Load the next batch automatically as the bottom of the list comes into view
+new IntersectionObserver(es => { if(es[0].isIntersecting && !$("more").hidden) search(false); }, {rootMargin:"800px 0px"}).observe($("more"));
 function setCollapsed(c){
   document.querySelector("header").classList.toggle("collapsed", c);
   $("ftoggle").textContent = c ? "Filters ▾" : "Hide filters ▴";
