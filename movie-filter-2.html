@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1c2140">
+<title>Tonight's Film</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1c2140; --surface:#272d55; --line:#3a4175; --text:#f3eee4; --muted:#a9acc9;
+  --accent:#f2b134; --good:#7fd6a8;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:1.9rem;font-weight:800;letter-spacing:-.02em;line-height:1}
+.sub{color:var(--muted);font-size:.9rem;margin:4px 0 10px}
+.row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;border:1px solid var(--line);background:transparent;border-radius:999px;padding:6px 12px;font-size:.9rem;cursor:pointer;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--accent);color:#1c2140;border-color:var(--accent);font-weight:600}
+.controls{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-top:10px}
+.slider{display:flex;align-items:center;gap:10px;font-size:.9rem}
+.slider input{flex:1;accent-color:var(--accent)}
+.slider b{min-width:2.4em;color:var(--accent);font-size:1.1rem}
+select{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.toggles{display:flex;gap:16px;margin-top:8px;font-size:.9rem;color:var(--muted);flex-wrap:wrap}
+.toggles label{display:flex;gap:6px;align-items:center}
+.toggles input{accent-color:var(--accent);width:18px;height:18px}
+main{padding:14px 16px 40px;max-width:1100px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px}
+.film{background:none;border:0;padding:0;text-align:left;cursor:pointer}
+.film img,.film .noimg{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:6px;background:var(--surface);display:block}
+.film .noimg{display:grid;place-items:center;color:var(--muted);font-size:.8rem;padding:8px;text-align:center}
+.film h3{margin:6px 0 0;font-size:.95rem;font-weight:600;line-height:1.2}
+.meta{font-size:.8rem;color:var(--muted);display:flex;gap:8px}
+.meta .imdb{color:var(--accent);font-weight:600}
+.status{color:var(--muted);text-align:center;padding:24px 0}
+.more{display:block;margin:20px auto 0;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 20px;cursor:pointer}
+dialog{border:0;border-radius:12px;background:var(--surface);color:var(--text);padding:0;width:min(560px,94vw);max-height:88vh}
+dialog::backdrop{background:rgba(10,12,30,.75)}
+.dbody{padding:18px}
+.dbody h2{margin:0 0 4px;font-size:1.5rem;line-height:1.15}
+.dbody p{margin:10px 0}
+.provs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.provs img{width:40px;height:40px;border-radius:8px}
+.backdrop{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
+.close{float:right;background:none;border:0;font-size:1.6rem;line-height:1;cursor:pointer;color:var(--muted)}
+.setup{max-width:480px;margin:30px auto;background:var(--surface);padding:20px;border-radius:12px}
+.setup input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin:6px 0 14px}
+.setup button{background:var(--accent);color:#1c2140;border:0;border-radius:8px;padding:10px 18px;font-weight:600;cursor:pointer}
+.setup small{color:var(--muted);display:block;margin-top:-8px;margin-bottom:14px}
+.gear{position:absolute;right:16px;top:14px;background:none;border:0;color:var(--muted);font-size:1.3rem;cursor:pointer}
+header{position:sticky}
+.hwrap{position:relative}
+</style>
+</head>
+<body>
+
+<div id="setup" class="setup" hidden>
+  <h2 style="margin-top:0">Add your keys</h2>
+  <label for="tmdbKey">TMDB API key or read-access token</label>
+  <input id="tmdbKey" autocomplete="off">
+  <label for="omdbKey">OMDb key (optional, for real IMDb ratings)</label>
+  <input id="omdbKey" autocomplete="off">
+  <small>Free at omdbapi.com. Without it, the rating filter uses TMDB's score.</small>
+  <button id="saveKeys">Save keys</button>
+  <p id="setupErr" style="color:#ff9c8a"></p>
+</div>
+
+<div id="app" hidden>
+<header>
+  <div class="hwrap">
+    <h1>Tonight's Film</h1>
+    <div class="sub" id="sub">UK streaming, English language</div>
+    <button class="gear" id="gear" aria-label="Edit keys">⚙</button>
+  </div>
+  <div class="row" id="providers" aria-label="Streaming services"></div>
+  <div class="controls">
+    <div class="slider">
+      <span id="ratingLabel">IMDb</span>
+      <input type="range" id="minRating" min="5" max="8.5" step="0.1" value="6.5" aria-label="Minimum rating">
+      <b id="ratingVal">6.5</b>
+    </div>
+    <select id="sort" aria-label="Sort">
+      <option value="popularity.desc">Popular</option>
+      <option value="vote_average.desc">Top rated</option>
+      <option value="primary_release_date.desc">Newest</option>
+    </select>
+  </div>
+  <div class="row" id="genres" style="margin-top:10px" aria-label="Genres"></div>
+  <div class="toggles">
+    <label>Min IMDb votes <select id="minVotes" aria-label="Minimum IMDb votes">
+      <option value="0">Any</option><option value="1000">1k</option>
+      <option value="5000" selected>5k</option><option value="25000">25k</option></select></label>
+    <label><input type="checkbox" id="englishOnly" checked> English only</label>
+    <label><input type="checkbox" id="freeOnly"> Free services only</label>
+  </div>
+</header>
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="status" id="status"></div>
+  <button class="more" id="more" hidden>Load more films</button>
+</main>
+</div>
+
+<dialog id="dlg"><div id="dlgBody"></div></dialog>
+
+<script>
+// ===== Paste your keys here so family don't need their own =====
+const DEFAULT_TMDB = "";
+const DEFAULT_OMDB = "";
+// ================================================================
+const IMG = "https://image.tmdb.org/t/p/";
+const DEFAULTS = [/^netflix$/i, /^amazon prime video$/i, /bbc iplayer/i, /^itvx$|itv hub/i, /^channel 4$|all 4/i];
+const FREE_RE = /iplayer|itvx|itv hub|channel 4|all 4|my5|channel 5|^u$|uktv|tptv|talking pictures|pluto|tubi|freevee|rakuten|plex|stv|s4c|bbc/i;
+const SHORT = {"Amazon Prime Video":"Prime Video","Disney Plus":"Disney+","Paramount Plus":"Paramount+","Apple TV Plus":"Apple TV+"};
+const S = {
+  tmdb: store("tmdbKey") || DEFAULT_TMDB, omdb: store("omdbKey") || DEFAULT_OMDB,
+  allProviders: [], providers: [], shown: JSON.parse(store("shown")||"null"), active: new Set(JSON.parse(store("active")||"null")||[]),
+  genres: new Set(), page: 1, totalPages: 1, loading: false, seen: new Set(),
+  imdbCache: JSON.parse(store("imdbCache3")||"{}")
+};
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+const $ = id => document.getElementById(id);
+
+async function tmdb(path, params={}){
+  const u = new URL("https://api.themoviedb.org/3"+path);
+  const bearer = S.tmdb.length > 40;
+  if(!bearer) u.searchParams.set("api_key", S.tmdb);
+  for(const [k,v] of Object.entries(params)) if(v!==""&&v!=null) u.searchParams.set(k,v);
+  const r = await fetch(u, {headers: bearer ? {Authorization:"Bearer "+S.tmdb} : {}});
+  if(!r.ok) throw new Error(r.status===401 ? "TMDB rejected the key. Check it in settings." : "TMDB error "+r.status);
+  return r.json();
+}
+
+async function imdbRating(tmdbId){
+  if(S.imdbCache[tmdbId] !== undefined) return S.imdbCache[tmdbId];
+  try{
+    const ext = await tmdb(`/movie/${tmdbId}/external_ids`);
+    if(!ext.imdb_id){ S.imdbCache[tmdbId]=null; return null; }
+    const r = await fetch(`https://www.omdbapi.com/?apikey=${encodeURIComponent(S.omdb)}&i=${ext.imdb_id}`);
+    const d = await r.json();
+    if(d.Response === "False" && !/not found/i.test(d.Error||"")){ omdbError(d.Error); return undefined; }
+    const v = parseFloat(d.imdbRating);
+    const votes = parseInt(String(d.imdbVotes||"").replace(/,/g,""),10);
+    S.imdbCache[tmdbId] = isNaN(v) ? null : {r:v, id:ext.imdb_id, votes:isNaN(votes)?0:votes};
+  }catch(e){ return undefined; }
+  store("imdbCache3", JSON.stringify(S.imdbCache));
+  return S.imdbCache[tmdbId];
+}
+
+let omdbWarned=false;
+function omdbError(msg){ if(omdbWarned) return; omdbWarned=true;
+  $("sub").textContent = "IMDb lookup failed: "+(msg||"check OMDb key")+" Showing TMDB scores."; }
+
+async function init(){
+  if(!S.tmdb){ $("setup").hidden=false; return; }
+  $("app").hidden=false;
+  $("ratingLabel").textContent = S.omdb ? "IMDb" : "Rating";
+  try{
+    const [pv, gn] = await Promise.all([
+      tmdb("/watch/providers/movie",{watch_region:"GB"}),
+      tmdb("/genre/movie/list",{language:"en-GB"})
+    ]);
+    S.allProviders = pv.results
+      .sort((a,b)=>(a.display_priorities?.GB ?? a.display_priority ?? 999)-(b.display_priorities?.GB ?? b.display_priority ?? 999))
+      .map(p=>({id:p.provider_id, name:p.provider_name, label:SHORT[p.provider_name]||p.provider_name, logo:p.logo_path, free:FREE_RE.test(p.provider_name)}));
+    if(!S.shown){
+      S.shown = DEFAULTS.map(re=>S.allProviders.find(p=>re.test(p.name))).filter(Boolean).map(p=>p.id);
+      store("shown", JSON.stringify(S.shown));
+    }
+    setProviders();
+    if(!S.active.size) S.providers.forEach(p=>S.active.add(p.id));
+    renderChips(); renderGenres(gn.genres);
+    search(true);
+  }catch(e){ $("status").textContent = e.message; }
+}
+
+function setProviders(){
+  S.providers = S.shown.map(id=>S.allProviders.find(p=>p.id===id)).filter(Boolean);
+}
+function renderChips(){
+  $("providers").innerHTML = "";
+  S.providers.forEach(p=>{
+    const b = document.createElement("button");
+    b.className="chip"; b.textContent=p.label;
+    b.setAttribute("aria-pressed", S.active.has(p.id));
+    b.onclick=()=>{
+      S.active.has(p.id) ? S.active.delete(p.id) : S.active.add(p.id);
+      store("active", JSON.stringify([...S.active]));
+      b.setAttribute("aria-pressed", S.active.has(p.id)); search(true);
+    };
+    $("providers").appendChild(b);
+  });
+  const add = document.createElement("button");
+  add.className="chip"; add.textContent="+ More services"; add.onclick=openServices;
+  $("providers").appendChild(add);
+}
+function openServices(){
+  const q = `<input id="svcQ" placeholder="Search services" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0">`;
+  $("dlgBody").innerHTML = `<div class="dbody"><button class="close" onclick="dlg.close()" aria-label="Close">×</button>
+    <h2>Choose services</h2><div class="meta">Every UK service TMDB tracks</div>${q}
+    <div id="svcList"></div>
+    <button class="more" id="svcDone">Done</button></div>`;
+  const draw = (f="") => {
+    $("svcList").innerHTML = S.allProviders.filter(p=>p.name.toLowerCase().includes(f.toLowerCase())).map(p=>`
+      <label style="display:flex;align-items:center;gap:10px;padding:6px 0">
+        <input type="checkbox" data-id="${p.id}" ${S.shown.includes(p.id)?"checked":""} style="width:20px;height:20px;accent-color:var(--accent)">
+        <img src="${IMG}w92${p.logo}" alt="" style="width:32px;height:32px;border-radius:6px">
+        <span>${esc(p.name)}</span></label>`).join("") || `<p class="meta">No service by that name.</p>`;
+    $("svcList").querySelectorAll("input").forEach(cb=>cb.onchange=()=>{
+      const id=+cb.dataset.id;
+      if(cb.checked){ if(!S.shown.includes(id)){ S.shown.push(id); S.active.add(id);} }
+      else { S.shown=S.shown.filter(x=>x!==id); S.active.delete(id); }
+    });
+  };
+  draw();
+  $("svcQ").oninput = e => draw(e.target.value);
+  $("svcDone").onclick = () => {
+    store("shown", JSON.stringify(S.shown)); store("active", JSON.stringify([...S.active]));
+    setProviders(); renderChips(); $("dlg").close(); search(true);
+  };
+  $("dlg").showModal();
+}
+function renderGenres(list){
+  const keep = ["Action","Comedy","Crime","Drama","Thriller","Science Fiction","Horror","Documentary","Romance","Animation","Family","History","Mystery","War"];
+  list.filter(g=>keep.includes(g.name)).forEach(g=>{
+    const b = document.createElement("button");
+    b.className="chip"; b.textContent = g.name==="Science Fiction"?"Sci-fi":g.name;
+    b.setAttribute("aria-pressed","false");
+    b.onclick=()=>{ S.genres.has(g.id)?S.genres.delete(g.id):S.genres.add(g.id);
+      b.setAttribute("aria-pressed",S.genres.has(g.id)); search(true); };
+    $("genres").appendChild(b);
+  });
+}
+
+function activeProviderIds(){
+  const free = $("freeOnly").checked;
+  return S.providers.filter(p=>S.active.has(p.id) && (!free || p.free)).map(p=>p.id);
+}
+
+let token = 0;
+async function search(reset){
+  const my = ++token;
+  if(reset){ S.page=1; S.seen.clear(); $("grid").innerHTML=""; }
+  const ids = activeProviderIds();
+  if(!ids.length){ $("status").textContent="Pick at least one service."; $("more").hidden=true; return; }
+  const min = parseFloat($("minRating").value);
+  const useImdb = !!S.omdb;
+  S.loading = true; $("more").hidden = true; $("status").textContent="Loading…";
+  let shown = 0, pagesTried = 0;
+  // Keep pulling pages until we have ~12 new films or run out
+  while(shown < 12 && S.page <= S.totalPages && pagesTried < 5){
+    const d = await tmdb("/discover/movie",{
+      watch_region:"GB", region:"GB", language:"en-GB",
+      with_watch_providers: ids.join("|"),
+      with_watch_monetization_types:"flatrate|free|ads",
+      with_original_language: $("englishOnly").checked ? "en" : "",
+      with_genres: [...S.genres].join(","),
+      // TMDB pre-filter a bit below the target so IMDb can decide
+      "vote_average.gte": useImdb ? Math.max(0, min-0.8) : min,
+      "vote_count.gte": $("sort").value==="primary_release_date.desc" ? 50 : 200,
+      sort_by: $("sort").value, include_adult:false, page:S.page
+    }).catch(e=>{ $("status").textContent=e.message; return null; });
+    if(my!==token || !d) return;
+    S.totalPages = Math.min(d.total_pages, 500); S.page++; pagesTried++;
+    for(const m of d.results){
+      if(S.seen.has(m.id)) continue; S.seen.add(m.id);
+      let rating = {r:m.vote_average, src:"TMDB"};
+      if(useImdb){
+        const i = await imdbRating(m.id);
+        if(my!==token) return;
+        if(i && i.r < min) continue;
+        if(i && i.votes < +$("minVotes").value) continue;
+        if(i) rating = {r:i.r, src:"IMDb", id:i.id, votes:i.votes};
+        else if(m.vote_average < min) continue;
+      }
+      addCard(m, rating); shown++;
+    }
+  }
+  S.loading=false;
+  $("status").textContent = $("grid").children.length ? "" : "No films match. Try lowering the rating or adding a service.";
+  $("more").hidden = S.page > S.totalPages;
+}
+
+function addCard(m, rating){
+  const b = document.createElement("button");
+  b.className="film";
+  const yr = (m.release_date||"").slice(0,4);
+  b.innerHTML = (m.poster_path ? `<img loading="lazy" src="${IMG}w342${m.poster_path}" alt="">` : `<div class="noimg">${esc(m.title)}</div>`)
+    + `<h3>${esc(m.title)}</h3><div class="meta"><span>${yr}</span><span class="${rating.src==="IMDb"?"imdb":""}">★ ${rating.r.toFixed(1)} ${rating.src}</span></div>`;
+  b.onclick=()=>openFilm(m, rating);
+  $("grid").appendChild(b);
+}
+
+async function openFilm(m, rating){
+  $("dlgBody").innerHTML = `<div class="dbody">Loading…</div>`; $("dlg").showModal();
+  const [d, wp] = await Promise.all([
+    tmdb(`/movie/${m.id}`,{language:"en-GB"}),
+    tmdb(`/movie/${m.id}/watch/providers`)
+  ]).catch(e=>[null,null]);
+  if(!d){ $("dlgBody").innerHTML=`<div class="dbody">Couldn't load this film.</div>`; return; }
+  const gb = (wp.results||{}).GB || {};
+  const mine = new Set(S.shown);
+  const on = [...(gb.flatrate||[]),...(gb.free||[]),...(gb.ads||[])].filter(p=>mine.has(p.provider_id));
+  const uniq = [...new Map(on.map(p=>[p.provider_id,p])).values()];
+  $("dlgBody").innerHTML = `
+    ${d.backdrop_path?`<img class="backdrop" src="${IMG}w780${d.backdrop_path}" alt="">`:""}
+    <div class="dbody">
+      <button class="close" onclick="dlg.close()" aria-label="Close">×</button>
+      <h2>${esc(d.title)}</h2>
+      <div class="meta"><span>${(d.release_date||"").slice(0,4)}</span><span>${d.runtime?d.runtime+" min":""}</span>
+        <span class="imdb">★ ${rating.r.toFixed(1)} ${rating.src}</span>${rating.votes?`<span>${rating.votes.toLocaleString("en-GB")} votes</span>`:""}</div>
+      <p>${esc(d.overview||"")}</p>
+      <div class="meta">${d.genres.map(g=>g.name).join(", ")}</div>
+      <div class="provs">${uniq.map(p=>`<img src="${IMG}w92${p.logo_path}" alt="${esc(p.provider_name)}" title="${esc(p.provider_name)}">`).join("")}</div>
+      <p>${gb.link?`<a href="${gb.link}" target="_blank" rel="noopener" style="color:var(--accent)">Where to watch</a>`:""}
+      ${rating.id?` &nbsp; <a href="https://www.imdb.com/title/${rating.id}/" target="_blank" rel="noopener" style="color:var(--accent)">IMDb page</a>`:""}</p>
+    </div>`;
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+let debounce;
+$("minRating").oninput = e => { $("ratingVal").textContent = (+e.target.value).toFixed(1);
+  clearTimeout(debounce); debounce = setTimeout(()=>search(true), 400); };
+$("minVotes").value = store("minVotes") || "5000";
+$("minVotes").onchange = e => { store("minVotes", e.target.value); search(true); };
+$("sort").onchange = $("englishOnly").onchange = $("freeOnly").onchange = () => search(true);
+$("more").onclick = () => search(false);
+$("dlg").addEventListener("click", e=>{ if(e.target.id==="dlg") e.target.close(); });
+$("gear").onclick = () => { $("tmdbKey").value=S.tmdb||""; $("omdbKey").value=S.omdb||""; $("app").hidden=true; $("setup").hidden=false; };
+$("saveKeys").onclick = () => {
+  const k = $("tmdbKey").value.trim();
+  if(!k){ $("setupErr").textContent="A TMDB key is required."; return; }
+  store("tmdbKey",k); store("omdbKey",$("omdbKey").value.trim()); store("imdbCache3","{}"); location.reload();
+};
+init();
+</script>
+</body>
+</html>
