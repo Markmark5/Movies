@@ -88,6 +88,23 @@ header{position:sticky}
 .note{grid-column:1/-1;color:var(--muted);font-size:.8rem}
 .plogos{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
 .plogos img{width:18px;height:18px;border-radius:4px}
+.cert{border:1.5px solid var(--muted);border-radius:4px;padding:0 5px;font-weight:600;font-size:.72rem;line-height:1.5}
+.tagline{font-style:italic;color:var(--muted)}
+.people{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.people .label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.names{display:flex;flex-wrap:wrap;gap:6px}
+.name{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 11px;font-size:.85rem;cursor:pointer}
+.name.dir{border-color:var(--accent);color:var(--accent);font-weight:600}
+.back{background:none;border:0;color:var(--accent);padding:0;cursor:pointer;font-size:.9rem;margin-bottom:8px}
+.dgrid{margin-top:12px;grid-template-columns:repeat(3,minmax(0,1fr))}
+.dgrid .film img,.dgrid .film .noimg{background:var(--bg)}
+.offlist{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
+.offlist li{display:flex;justify-content:space-between;gap:12px}
+.offlist li span:first-child{color:var(--text)}
+details.off{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+details.off summary{cursor:pointer;color:var(--muted);font-size:.85rem}
+.links{display:flex;flex-wrap:wrap;gap:6px 16px}
+.links a{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -448,7 +465,7 @@ async function search(reset){
   $("more").hidden = S.page > S.totalPages;
 }
 
-function addCard(m, rating){
+function addCard(m, rating, target=$("grid"), back){
   const b = document.createElement("button");
   b.className="film";
   const yr = (m.release_date||"").slice(0,4);
@@ -456,18 +473,34 @@ function addCard(m, rating){
     + `<h3>${esc(m.title)}</h3><div class="meta"><span>${yr}</span><span class="${rating.src==="IMDb"?"imdb":""}">★ ${rating.r.toFixed(1)} ${rating.src}</span></div>`;
   if(S.favs[m.id]) b.insertAdjacentHTML("beforeend", `<span class="heart" aria-label="Favourite">♥</span>`);
   b.dataset.id = m.id;
-  b.onclick=()=>openFilm(m, rating);
-  $("grid").appendChild(b);
+  b.onclick=()=>openFilm(m, rating, back);
+  target.appendChild(b);
   return b;
 }
 
-async function openFilm(m, rating){
-  $("dlgBody").innerHTML = `<div class="dbody">Loading…</div>`; $("dlg").showModal();
+// back = {label, go} when the popup was opened from a person's list
+let dlgToken = 0;
+function dlgLoading(){
+  $("dlgBody").innerHTML = `<div class="dbody">Loading…</div>`;
+  if(!$("dlg").open) $("dlg").showModal();
+  $("dlg").scrollTop = 0;
+  return ++dlgToken;
+}
+const backBtn = back => back ? `<button class="back" id="dlgBack">‹ ${esc(back.label)}</button>` : "";
+async function openFilm(m, rating, back){
+  const my = dlgLoading();
   const [d, wp] = await Promise.all([
-    tmdb(`/movie/${m.id}`,{language:"en-GB"}),
+    tmdb(`/movie/${m.id}`,{language:"en-GB", append_to_response:"credits,release_dates,videos", include_video_language:"en,null"}),
     tmdb(`/movie/${m.id}/watch/providers`)
   ]).catch(e=>[null,null]);
+  if(my!==dlgToken) return;
   if(!d){ $("dlgBody").innerHTML=`<div class="dbody">Couldn't load this film.</div>`; return; }
+  const cert = ((d.release_dates?.results||[]).find(r=>r.iso_3166_1==="GB")?.release_dates||[]).map(r=>r.certification).find(Boolean);
+  const vids = (d.videos?.results||[]).filter(v=>v.site==="YouTube" && v.type==="Trailer");
+  const trailer = vids.find(v=>v.official) || vids[0];
+  const directors = (d.credits?.crew||[]).filter(c=>c.job==="Director");
+  const cast = (d.credits?.cast||[]).slice(0,5);
+  const self = {label:d.title, go:()=>openFilm(m, rating, back)};
   const gb = (wp.results||{}).GB || {};
   const mine = new Set(S.shown);
   const on = [...(gb.flatrate||[]),...(gb.free||[]),...(gb.ads||[])].filter(p=>mine.has(p.provider_id));
@@ -476,17 +509,69 @@ async function openFilm(m, rating){
     ${d.backdrop_path?`<img class="backdrop" src="${IMG}w780${d.backdrop_path}" alt="">`:""}
     <div class="dbody">
       <button class="close" onclick="dlg.close()" aria-label="Close">×</button>
+      ${backBtn(back)}
       <h2>${esc(d.title)}</h2>
-      <div class="meta"><span>${(d.release_date||"").slice(0,4)}</span><span>${d.runtime?d.runtime+" min":""}</span>
+      <div class="meta"><span>${(d.release_date||"").slice(0,4)}</span><span>${d.runtime?d.runtime+" min":""}</span>${cert?`<span class="cert">${esc(cert)}</span>`:""}
         <span class="imdb">★ ${rating.r.toFixed(1)} ${rating.src}</span>${rating.votes?`<span>${rating.votes.toLocaleString("en-GB")} votes</span>`:""}</div>
       <button class="fav" id="favBtn" aria-pressed="${!!S.favs[m.id]}">${S.favs[m.id]?"♥ In favourites":"♡ Add to favourites"}</button>
+      ${d.tagline?`<p class="tagline">${esc(d.tagline)}</p>`:""}
       <p>${esc(d.overview||"")}</p>
+      ${directors.length?`<div class="people"><span class="label">Directed by</span><div class="names">${directors.map(c=>`<button class="name dir" data-pid="${c.id}" data-job="Director" data-pname="${esc(c.name)}">${esc(c.name)} ›</button>`).join("")}</div></div>`:""}
+      ${cast.length?`<div class="people"><span class="label">Starring</span><div class="names">${cast.map(c=>`<button class="name" data-pid="${c.id}" data-job="Actor" data-pname="${esc(c.name)}">${esc(c.name)}</button>`).join("")}</div></div>`:""}
       <div class="meta">${d.genres.map(g=>g.name).join(", ")}</div>
       <div class="provs">${uniq.map(p=>`<img src="${IMG}w92${p.logo_path}" alt="${esc(p.provider_name)}" title="${esc(p.provider_name)}">`).join("")}</div>
-      <p>${gb.link?`<a href="${gb.link}" target="_blank" rel="noopener" style="color:var(--accent)">Where to watch</a>`:""}
-      ${(d.imdb_id||rating.id)?` &nbsp; <a href="https://www.imdb.com/title/${d.imdb_id||rating.id}/" target="_blank" rel="noopener" style="color:var(--accent)">IMDb page</a>`:""}</p>
+      <p class="links">${gb.link?`<a href="${gb.link}" target="_blank" rel="noopener">Where to watch</a>`:""}
+      ${(d.imdb_id||rating.id)?`<a href="https://www.imdb.com/title/${d.imdb_id||rating.id}/" target="_blank" rel="noopener">IMDb page</a>`:""}
+      ${trailer?`<a href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>`:""}</p>
     </div>`;
   $("favBtn").onclick = () => toggleFav(m, rating);
+  if(back) $("dlgBack").onclick = back.go;
+  $("dlgBody").querySelectorAll("[data-pid]").forEach(b => b.onclick = () =>
+    openPerson({id:+b.dataset.pid, name:b.dataset.pname, job:b.dataset.job}, self));
+}
+
+// A director's or actor's films: those on your selected services first (sorted by IMDb), the rest listed below
+async function openPerson(p, back){
+  const my = dlgLoading();
+  const ids = S.providers.map(x=>x.id).filter(id=>S.active.has(id));
+  const [credits, cat, ...pages] = await Promise.all([
+    tmdb(`/person/${p.id}/movie_credits`,{language:"en-GB"}),
+    loadCatalogue(),
+    ...[1,2,3].map(page => ids.length ? tmdb("/discover/movie",{watch_region:"GB", with_people:p.id, with_watch_providers:ids.join("|"),
+      with_watch_monetization_types:"flatrate|free|ads", include_adult:false, sort_by:"popularity.desc", page}).catch(()=>null) : null)
+  ]).catch(()=>[null]);
+  if(my!==dlgToken) return;
+  if(!credits){ $("dlgBody").innerHTML=`<div class="dbody">Couldn't load ${esc(p.name)}'s films.</div>`; return; }
+  const theirs = p.job==="Director" ? credits.crew.filter(c=>c.job==="Director") : credits.cast.filter(c=>!/\b(self|himself|herself)\b/i.test(c.character||""));
+  const mineIds = new Set(pages.flatMap(d=>d?.results||[]).map(m=>m.id));
+  const uniq = [...new Map(theirs.map(m=>[m.id,m])).values()];
+  const on = uniq.filter(m=>mineIds.has(m.id)), off = uniq.filter(m=>!mineIds.has(m.id));
+  const rated = await Promise.all(on.map(async m => {
+    const i = await imdbRating(m.id);
+    return {m, rating: i ? {r:i.r, src:"IMDb", id:i.id, votes:i.votes} : {r:m.vote_average||0, src:"TMDB"}};
+  }));
+  if(my!==dlgToken) return;
+  rated.sort((a,b)=>b.rating.r-a.rating.r);
+  off.sort((a,b)=>(b.release_date||"9999").localeCompare(a.release_date||"9999"));
+  const rows = cat ? new Map(cat.rows.map(r=>[r[0],r])) : new Map();
+  const self = {label:p.name, go:()=>openPerson(p, back)};
+  $("dlgBody").innerHTML = `<div class="dbody">
+      <button class="close" onclick="dlg.close()" aria-label="Close">×</button>
+      ${backBtn(back)}
+      <h2>${esc(p.name)}</h2>
+      <div class="meta">${p.job} · ${rated.length} film${rated.length===1?"":"s"} on your services${rated.length>1?" · sorted by IMDb":""}</div>
+      <div class="grid dgrid" id="pgrid"></div>
+      ${off.length?`<details class="off"><summary>${off.length} more not on your services</summary><ul class="offlist">${off.slice(0,40).map(m=>
+        `<li><span>${esc(m.title)}</span><span>${(m.release_date||"").slice(0,4)||"TBA"}</span></li>`).join("")}${off.length>40?`<li><span>…and ${off.length-40} more</span></li>`:""}</ul></details>`:""}
+    </div>`;
+  if(back) $("dlgBack").onclick = back.go;
+  if(!rated.length) $("pgrid").outerHTML = `<p class="meta">None on your selected services right now.</p>`;
+  rated.forEach(({m, rating}) => {
+    const card = addCard(m, rating, $("pgrid"), self);
+    const ps = rows.get(m.id)?.[7] || [];
+    const logos = ps.filter(id=>ids.includes(id)).map(id=>S.allProviders.find(x=>x.id===id)).filter(Boolean);
+    if(logos.length) card.insertAdjacentHTML("beforeend", `<div class="plogos">${logos.map(x=>`<img src="${IMG}w92${x.logo}" alt="${esc(x.name)}" title="${esc(x.name)}">`).join("")}</div>`);
+  });
 }
 function toggleFav(m, rating){
   if(S.favs[m.id]) delete S.favs[m.id];
@@ -494,10 +579,9 @@ function toggleFav(m, rating){
   store("favs", JSON.stringify(S.favs));
   const on = !!S.favs[m.id], btn = $("favBtn");
   btn.setAttribute("aria-pressed", on); btn.textContent = on ? "♥ In favourites" : "♡ Add to favourites";
-  const card = document.querySelector(`.film[data-id="${m.id}"]`);
-  if(card){ const h = card.querySelector(".heart");
+  document.querySelectorAll(`.film[data-id="${m.id}"]`).forEach(card => { const h = card.querySelector(".heart");
     if(on && !h) card.insertAdjacentHTML("beforeend", `<span class="heart" aria-label="Favourite">♥</span>`);
-    if(!on && h) h.remove(); }
+    if(!on && h) h.remove(); });
 }
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
