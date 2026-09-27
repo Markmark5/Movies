@@ -84,19 +84,26 @@ async function catalogue(id, range = null) {
 }
 
 // IMDb ratings for every tracked film, from IMDb's free daily dataset.
-// data/imdb-ids.json caches TMDB id → IMDb number (0 = none), so only new films need a lookup.
+// data/imdb-ids.json caches TMDB id → IMDb number (0 = none) and data/countries.json caches
+// TMDB id → origin countries ("GB,US"), so only new films need a details lookup.
 async function buildRatings(seen) {
   const ids = await readJson("imdb-ids.json", {});
+  const countries = await readJson("countries.json", {});
   const all = [...new Set(Object.values(seen).flatMap(m => Object.keys(m)))];
-  const todo = all.filter(id => !(id in ids));
-  console.log(`IMDb ids: ${all.length - todo.length} cached, ${todo.length} to look up.`);
+  const todo = all.filter(id => !(id in ids) || !(id in countries));
+  console.log(`Film details: ${all.length - todo.length} cached, ${todo.length} to look up.`);
   let done = 0;
   await pool(todo, async id => {
-    try { const x = await tmdb(`/movie/${id}/external_ids`); ids[id] = +(x.imdb_id || "").replace(/^tt/, "") || 0; }
+    try {
+      const d = await tmdb(`/movie/${id}`);
+      ids[id] = +(d.imdb_id || "").replace(/^tt/, "") || 0;
+      countries[id] = (d.origin_country?.length ? d.origin_country : (d.production_countries || []).map(c => c.iso_3166_1)).join(",");
+    }
     catch { /* try again tomorrow */ }
     if (++done % 2000 === 0) console.log(`  ${done}/${todo.length}`);
   }, 10);
   await writeJson("imdb-ids.json", ids);
+  await writeJson("countries.json", countries);
 
   const r = await fetch("https://datasets.imdbws.com/title.ratings.tsv.gz");
   if (!r.ok) throw new Error(`IMDb dataset download failed (${r.status})`);
@@ -109,6 +116,37 @@ async function buildRatings(seen) {
   }
   await writeJson("ratings.json", out);
   console.log(`ratings.json: ${Object.keys(out).length} films with IMDb ratings.`);
+  return { ratings: out, countries };
+}
+
+// Compact list of films currently on a tracked service, so the app can sort Top rated by IMDb.
+// Row: [id, title, poster, year, lang, genre_ids, countries, providers, imdbRating|null, imdbVotes, tmdbAvg, tmdbCount]
+// Poster is the TMDB path without "/" and ".jpg". TMDB scores are only kept for films IMDb hasn't rated.
+// Left out to keep the file small: films rated under 5 (below the app's slider), under 100 IMDb votes,
+// or with no IMDb rating and under 200 TMDB votes.
+async function buildCatalogue(seen, meta, tracked, { ratings, countries }) {
+  const prev = await readJson("catalogue.json", { rows: [] });
+  const prevRows = new Map(prev.rows.map(r => [r[0], r]));
+  const poster = p => (p || "").replace(/^\/|\.jpg$/g, "");
+  const stillThere = addDays(today, -3), provs = new Map();
+  for (const [pid, map] of Object.entries(seen))
+    for (const [tid, e] of Object.entries(map))
+      if (e.last >= stillThere) (provs.get(+tid) || provs.set(+tid, []).get(+tid)).push(+pid);
+  const rows = [];
+  for (const [id, ps] of provs) {
+    const m = meta.get(id), old = prevRows.get(id), r = ratings[id];
+    if (!m && !old) continue;
+    const tAvg = m ? Math.round((m.vote_average || 0) * 10) / 10 : old[10], tCount = m ? m.vote_count || 0 : old[11];
+    if (r ? r[0] < 5 || r[1] < 100 : tAvg < 5 || tCount < 200) continue;
+    rows.push([id,
+      m ? m.title : old[1], m ? poster(m.poster_path) : old[2], m ? +(m.release_date || "").slice(0, 4) || 0 : old[3],
+      m ? m.original_language || "" : old[4], m ? m.genre_ids || [] : old[5],
+      countries[id] ?? (old ? old[6] : ""), ps,
+      r ? r[0] : null, r ? r[1] : 0, r ? 0 : tAvg, r ? 0 : tCount]);
+  }
+  rows.sort((a, b) => (b[8] ?? b[10]) - (a[8] ?? a[10]) || b[9] - a[9]);
+  await writeJson("catalogue.json", { generated: today, providers: [...tracked], rows });
+  console.log(`catalogue.json: ${rows.length} films.`);
 }
 
 async function main() {
@@ -182,8 +220,8 @@ async function main() {
   await writeJson("seen.json", seen);
   await writeJson("arrivals.json", { generated: today, baselineDate: prevArrivals?.baselineDate || today, items: list });
   if (!(await readJson("providers.json", null))) await writeJson("providers.json", { extra: [] }, true);
-  try { await buildRatings(seen); }
-  catch (e) { console.warn(`Ratings not updated today: ${e.message}`); }
+  try { await buildCatalogue(seen, meta, ids, await buildRatings(seen)); }
+  catch (e) { console.warn(`Ratings/catalogue not updated today: ${e.message}`); }
   console.log(`arrivals.json: ${list.length} films in the last ${KEEP_DAYS} days.`);
 }
 

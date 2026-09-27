@@ -358,8 +358,46 @@ async function showArrivals(days){
   }
   $("status").textContent = shown ? "" : `No new arrivals match in the last ${days} days. Try lowering the rating or adding a service.`;
 }
+// Top rated: sort the daily catalogue by IMDb rating. Falls back to TMDB's order when a selected service isn't tracked.
+let catalogueData;
+async function loadCatalogue(){
+  if(catalogueData) return catalogueData;
+  try{ const r = await fetch(`data/catalogue.json?t=${dayOffset(0)}`); if(r.ok) catalogueData = await r.json(); }catch(e){}
+  return catalogueData;
+}
+async function topRated(){
+  const my = ++token; S.topMode = false;
+  $("grid").innerHTML=""; $("more").hidden=true; $("status").textContent="Loading…";
+  const cat = await loadCatalogue();
+  if(my!==token) return true;
+  const ids = activeProviderIds();
+  if(!cat || !ids.length || ids.some(id=>!cat.providers.includes(id))) return false;
+  const set = new Set(ids), min = parseFloat($("minRating").value), minV = +$("minVotes").value, dec = +$("decade").value;
+  const eng = $("englishOnly").checked, brit = $("britishOnly").checked, gs = [...S.genres];
+  S.top = cat.rows.filter(r => r[7].some(p=>set.has(p))
+      && (!eng || r[4]==="en") && (!brit || r[6].split(",").includes("GB"))
+      && gs.every(g=>r[5].includes(g)) && (!dec || (r[3]>=dec && r[3]<=dec+9))
+      && (r[8]!=null ? r[8]>=min && r[9]>=minV : r[10]>=min))
+    .map(r => ({ m:{id:r[0], title:r[1], poster_path:r[2]?`/${r[2]}.jpg`:null, release_date:String(r[3]||""), vote_average:r[8]??r[10]},
+      rating: r[8]!=null ? {r:r[8], src:"IMDb", votes:r[9]} : {r:r[10], src:"TMDB"} }));
+  S.topPos = 0; S.topMode = true;
+  showTopBatch();
+  return true;
+}
+function showTopBatch(){
+  S.top.slice(S.topPos, S.topPos+30).forEach(x=>addCard(x.m, x.rating));
+  S.topPos += 30;
+  $("status").textContent = S.top.length ? "" : "No films match. Try lowering the rating or adding a service.";
+  // Re-show the scroll sentinel after a frame so the observer notices it if it's still on screen
+  $("more").hidden = true;
+  requestAnimationFrame(()=>{ $("more").hidden = S.topPos >= S.top.length; });
+}
 async function search(reset){
   if($("sort").value==="favourites"){ showFavourites(); return; }
+  if($("sort").value==="vote_average.desc"){
+    if(!reset && S.topMode){ showTopBatch(); return; }
+    if(reset && await topRated()) return;
+  }
   if($("sort").value==="new7" || $("sort").value==="new30"){ showArrivals($("sort").value==="new7" ? 7 : 30); return; }
   const my = ++token;
   if(reset){ S.page=1; S.seen.clear(); $("grid").innerHTML=""; }
