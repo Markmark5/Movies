@@ -371,7 +371,10 @@ async function topRated(){
   const cat = await loadCatalogue();
   if(my!==token) return true;
   const ids = activeProviderIds();
-  if(!cat || !ids.length || ids.some(id=>!cat.providers.includes(id))) return false;
+  const untracked = cat ? S.providers.filter(p=>ids.includes(p.id) && !cat.providers.includes(p.id)).map(p=>p.label) : [];
+  $("warn").hidden = !untracked.length;
+  if(untracked.length) $("warn").textContent = `Top rated is in TMDB order because ${untracked.join(", ")} ${untracked.length>1?"aren't":"isn't"} in the daily check.`;
+  if(!cat || !ids.length || untracked.length) return false;
   const set = new Set(ids), min = parseFloat($("minRating").value), minV = +$("minVotes").value, dec = +$("decade").value;
   const eng = $("englishOnly").checked, brit = $("britishOnly").checked, gs = [...S.genres];
   S.top = cat.rows.filter(r => r[7].some(p=>set.has(p))
@@ -393,6 +396,7 @@ function showTopBatch(){
   requestAnimationFrame(()=>{ $("more").hidden = S.topPos >= S.top.length; });
 }
 async function search(reset){
+  if(reset && $("warn").textContent.startsWith("Top rated")) $("warn").hidden = true;
   if($("sort").value==="favourites"){ showFavourites(); return; }
   if($("sort").value==="vote_average.desc"){
     if(!reset && S.topMode){ showTopBatch(); return; }
