@@ -358,7 +358,7 @@ async function openFilm(m, rating){
       <div class="meta">${d.genres.map(g=>g.name).join(", ")}</div>
       <div class="provs">${uniq.map(p=>`<img src="${IMG}w92${p.logo_path}" alt="${esc(p.provider_name)}" title="${esc(p.provider_name)}">`).join("")}</div>
       <p>${gb.link?`<a href="${gb.link}" target="_blank" rel="noopener" style="color:var(--accent)">Where to watch</a>`:""}
-      ${rating.id?` &nbsp; <a href="https://www.imdb.com/title/${rating.id}/" target="_blank" rel="noopener" style="color:var(--accent)">IMDb page</a>`:""}</p>
+      ${(d.imdb_id||rating.id)?` &nbsp; <a href="https://www.imdb.com/title/${d.imdb_id||rating.id}/" target="_blank" rel="noopener" style="color:var(--accent)">IMDb page</a>`:""}</p>
     </div>`;
   $("favBtn").onclick = () => toggleFav(m, rating);
 }
