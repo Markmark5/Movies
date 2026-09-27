@@ -32,7 +32,11 @@ h1{margin:0;font-size:1.9rem;font-weight:800;letter-spacing:-.02em;line-height:1
 .row::-webkit-scrollbar{display:none}
 .chip{flex:0 0 auto;border:1px solid var(--line);background:transparent;border-radius:999px;padding:6px 12px;font-size:.9rem;cursor:pointer;white-space:nowrap}
 .chip[aria-pressed="true"]{background:var(--accent);color:#1c2140;border-color:var(--accent);font-weight:600}
-.controls{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-top:10px}
+.controls{display:grid;grid-template-columns:1fr;gap:10px;align-items:center;margin-top:10px}
+.selects{display:flex;gap:8px}
+.selects select{flex:1;min-width:0}
+header,main{max-width:100vw;overflow-x:hidden}
+.slider{min-width:0}
 .slider{display:flex;align-items:center;gap:10px;font-size:.9rem}
 .slider input{flex:1;accent-color:var(--accent)}
 .slider b{min-width:2.4em;color:var(--accent);font-size:1.1rem}
@@ -41,12 +45,12 @@ select{background:var(--surface);border:1px solid var(--line);border-radius:8px;
 .toggles label{display:flex;gap:6px;align-items:center}
 .toggles input{accent-color:var(--accent);width:18px;height:18px}
 main{padding:14px 16px 40px;max-width:1100px;margin:0 auto}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:10px}
 .film{background:none;border:0;padding:0;text-align:left;cursor:pointer}
 .film img,.film .noimg{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:6px;background:var(--surface);display:block}
 .film .noimg{display:grid;place-items:center;color:var(--muted);font-size:.8rem;padding:8px;text-align:center}
-.film h3{margin:6px 0 0;font-size:.95rem;font-weight:600;line-height:1.2}
-.meta{font-size:.8rem;color:var(--muted);display:flex;gap:8px}
+.film h3{margin:6px 0 0;font-size:.85rem;font-weight:600;line-height:1.2}
+.meta{font-size:.75rem;flex-wrap:wrap;color:var(--muted);display:flex;gap:8px}
 .meta .imdb{color:var(--accent);font-weight:600}
 .status{color:var(--muted);text-align:center;padding:24px 0}
 .more{display:block;margin:20px auto 0;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 20px;cursor:pointer}
@@ -58,6 +62,10 @@ dialog::backdrop{background:rgba(10,12,30,.75)}
 .provs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .provs img{width:40px;height:40px;border-radius:8px}
 .backdrop{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
+.fav{background:none;border:1px solid var(--line);border-radius:999px;padding:6px 14px;cursor:pointer;margin-top:10px}
+.fav[aria-pressed="true"]{background:var(--accent);color:#1c2140;border-color:var(--accent);font-weight:600}
+.film{position:relative}
+.film .heart{position:absolute;top:6px;right:6px;background:var(--accent);color:#1c2140;border-radius:999px;width:26px;height:26px;display:grid;place-items:center;font-size:.85rem}
 .close{float:right;background:none;border:0;font-size:1.6rem;line-height:1;cursor:pointer;color:var(--muted)}
 .setup{max-width:480px;margin:30px auto;background:var(--surface);padding:20px;border-radius:12px}
 .setup input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin:6px 0 14px}
@@ -95,7 +103,7 @@ header{position:sticky}
       <input type="range" id="minRating" min="5" max="8.5" step="0.1" value="6.5" aria-label="Minimum rating">
       <b id="ratingVal">6.5</b>
     </div>
-    <div style="display:flex;gap:6px">
+    <div class="selects">
     <select id="decade" aria-label="Decade">
       <option value="">Any decade</option><option value="2020">2020s</option><option value="2010">2010s</option><option value="2000">2000s</option><option value="1990">1990s</option><option value="1980">1980s</option><option value="1970">1970s</option><option value="1960">1960s</option><option value="1950">1950s</option><option value="1940">1940s</option><option value="1930">1930s</option>
     </select>
@@ -103,6 +111,7 @@ header{position:sticky}
       <option value="popularity.desc">Popular</option>
       <option value="vote_average.desc">Top rated</option>
       <option value="primary_release_date.desc">Newest</option>
+      <option value="favourites">♥ Favourites</option>
     </select>
     </div>
   </div>
@@ -138,7 +147,8 @@ const S = {
   tmdb: store("tmdbKey") || DEFAULT_TMDB, omdb: store("omdbKey") || DEFAULT_OMDB,
   allProviders: [], providers: [], shown: JSON.parse(store("shown")||"null"), active: new Set(JSON.parse(store("active")||"null")||[]),
   genres: new Set(), page: 1, totalPages: 1, loading: false, seen: new Set(),
-  imdbCache: JSON.parse(store("imdbCache3")||"{}")
+  imdbCache: JSON.parse(store("imdbCache3")||"{}"),
+  favs: JSON.parse(store("favs")||"{}")
 };
 function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
 const $ = id => document.getElementById(id);
@@ -160,7 +170,7 @@ async function imdbRating(tmdbId){
     if(!ext.imdb_id){ S.imdbCache[tmdbId]=null; return null; }
     const r = await fetch(`https://www.omdbapi.com/?apikey=${encodeURIComponent(S.omdb)}&i=${ext.imdb_id}`);
     const d = await r.json();
-    if(d.Response === "False" && !/not found/i.test(d.Error||"")){ omdbError(d.Error); return undefined; }
+    if(d.Response === "False"){ if(/api key|limit|unauthori/i.test(d.Error||"")){ omdbError(d.Error); return undefined; } S.imdbCache[tmdbId]=null; store("imdbCache3", JSON.stringify(S.imdbCache)); return null; }
     const v = parseFloat(d.imdbRating);
     const votes = parseInt(String(d.imdbVotes||"").replace(/,/g,""),10);
     S.imdbCache[tmdbId] = isNaN(v) ? null : {r:v, id:ext.imdb_id, votes:isNaN(votes)?0:votes};
@@ -260,7 +270,14 @@ function activeProviderIds(){
 }
 
 let token = 0;
+function showFavourites(){
+  ++token; $("grid").innerHTML=""; $("more").hidden=true;
+  const list = Object.values(S.favs).sort((a,b)=>b.added-a.added);
+  list.forEach(f=>addCard(f.m, f.rating));
+  $("status").textContent = list.length ? "" : "No favourites yet. Tap a film, then tap ♡ Add to favourites.";
+}
 async function search(reset){
+  if($("sort").value==="favourites"){ showFavourites(); return; }
   const my = ++token;
   if(reset){ S.page=1; S.seen.clear(); $("grid").innerHTML=""; }
   const ids = activeProviderIds();
@@ -312,6 +329,8 @@ function addCard(m, rating){
   const yr = (m.release_date||"").slice(0,4);
   b.innerHTML = (m.poster_path ? `<img loading="lazy" src="${IMG}w342${m.poster_path}" alt="">` : `<div class="noimg">${esc(m.title)}</div>`)
     + `<h3>${esc(m.title)}</h3><div class="meta"><span>${yr}</span><span class="${rating.src==="IMDb"?"imdb":""}">★ ${rating.r.toFixed(1)} ${rating.src}</span></div>`;
+  if(S.favs[m.id]) b.insertAdjacentHTML("beforeend", `<span class="heart" aria-label="Favourite">♥</span>`);
+  b.dataset.id = m.id;
   b.onclick=()=>openFilm(m, rating);
   $("grid").appendChild(b);
 }
@@ -334,12 +353,25 @@ async function openFilm(m, rating){
       <h2>${esc(d.title)}</h2>
       <div class="meta"><span>${(d.release_date||"").slice(0,4)}</span><span>${d.runtime?d.runtime+" min":""}</span>
         <span class="imdb">★ ${rating.r.toFixed(1)} ${rating.src}</span>${rating.votes?`<span>${rating.votes.toLocaleString("en-GB")} votes</span>`:""}</div>
+      <button class="fav" id="favBtn" aria-pressed="${!!S.favs[m.id]}">${S.favs[m.id]?"♥ In favourites":"♡ Add to favourites"}</button>
       <p>${esc(d.overview||"")}</p>
       <div class="meta">${d.genres.map(g=>g.name).join(", ")}</div>
       <div class="provs">${uniq.map(p=>`<img src="${IMG}w92${p.logo_path}" alt="${esc(p.provider_name)}" title="${esc(p.provider_name)}">`).join("")}</div>
       <p>${gb.link?`<a href="${gb.link}" target="_blank" rel="noopener" style="color:var(--accent)">Where to watch</a>`:""}
       ${rating.id?` &nbsp; <a href="https://www.imdb.com/title/${rating.id}/" target="_blank" rel="noopener" style="color:var(--accent)">IMDb page</a>`:""}</p>
     </div>`;
+  $("favBtn").onclick = () => toggleFav(m, rating);
+}
+function toggleFav(m, rating){
+  if(S.favs[m.id]) delete S.favs[m.id];
+  else S.favs[m.id] = {m:{id:m.id,title:m.title,poster_path:m.poster_path,release_date:m.release_date,vote_average:m.vote_average}, rating, added:Date.now()};
+  store("favs", JSON.stringify(S.favs));
+  const on = !!S.favs[m.id], btn = $("favBtn");
+  btn.setAttribute("aria-pressed", on); btn.textContent = on ? "♥ In favourites" : "♡ Add to favourites";
+  const card = document.querySelector(`.film[data-id="${m.id}"]`);
+  if(card){ const h = card.querySelector(".heart");
+    if(on && !h) card.insertAdjacentHTML("beforeend", `<span class="heart" aria-label="Favourite">♥</span>`);
+    if(!on && h) h.remove(); }
 }
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
@@ -354,6 +386,7 @@ $("decade").addEventListener("change", e=>store("decade", e.target.value));
 $("britishOnly").addEventListener("change", e=>store("britishOnly", e.target.checked?"1":"0"));
 $("decade").onchange = $("sort").onchange = $("britishOnly").onchange = $("englishOnly").onchange = $("freeOnly").onchange = () => search(true);
 $("more").onclick = () => search(false);
+$("dlg").addEventListener("close", ()=>{ if($("sort").value==="favourites") showFavourites(); });
 $("dlg").addEventListener("click", e=>{ if(e.target.id==="dlg") e.target.close(); });
 $("gear").onclick = () => { $("tmdbKey").value=S.tmdb||""; $("omdbKey").value=S.omdb||""; $("app").hidden=true; $("setup").hidden=false; };
 $("saveKeys").onclick = () => {
