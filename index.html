@@ -95,7 +95,8 @@ header{position:sticky}
 .names{display:flex;flex-wrap:wrap;gap:6px}
 .name{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 11px;font-size:.85rem;cursor:pointer}
 .name.dir{border-color:var(--accent);color:var(--accent);font-weight:600}
-.back{background:none;border:0;color:var(--accent);padding:0;cursor:pointer;font-size:.9rem;margin-bottom:8px}
+.dnav{position:sticky;top:0;z-index:2;background:var(--surface);padding:10px 14px;border-bottom:1px solid var(--line)}
+.back{background:none;border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:5px 14px;cursor:pointer;font-size:.9rem;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dgrid{margin-top:12px;grid-template-columns:repeat(3,minmax(0,1fr))}
 .dgrid .film img,.dgrid .film .noimg{background:var(--bg)}
 .offlist{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
@@ -478,17 +479,27 @@ function addCard(m, rating, target=$("grid"), back){
   return b;
 }
 
-// back = {label, go} when the popup was opened from a person's list
-let dlgToken = 0;
-function dlgLoading(){
-  $("dlgBody").innerHTML = `<div class="dbody">Loading…</div>`;
-  if(!$("dlg").open) $("dlg").showModal();
+// back = {label, go} when the popup was opened from a person's list.
+// Each step adds a browser history entry, so the phone's back gesture steps back too.
+let dlgToken = 0, dlgDepth = 0, dlgPopping = false, dlgBack = null;
+function dlgLoading(back){
+  dlgBack = back || null;
+  $("dlgBody").innerHTML = `${backBtn(back)}<div class="dbody">Loading…</div>`;
+  if(!$("dlg").open){ $("dlg").showModal(); dlgDepth = 0; }
+  if(!dlgPopping){ try{ history.pushState({dlg:dlgDepth+1}, ""); dlgDepth++; }catch(e){} }
   $("dlg").scrollTop = 0;
   return ++dlgToken;
 }
-const backBtn = back => back ? `<button class="back" id="dlgBack">‹ ${esc(back.label)}</button>` : "";
+const backBtn = back => back ? `<div class="dnav"><button class="back" onclick="history.back()">‹ ${esc(back.label)}</button></div>` : "";
+window.addEventListener("popstate", () => {
+  if(!$("dlg").open || dlgDepth <= 0) return;
+  dlgDepth--;
+  if(dlgDepth > 0 && dlgBack){ dlgPopping = true; try{ dlgBack.go(); } finally { dlgPopping = false; } }
+  else $("dlg").close();
+});
+$("dlg").addEventListener("close", () => { if(dlgDepth > 0){ const n = dlgDepth; dlgDepth = 0; history.go(-n); } });
 async function openFilm(m, rating, back){
-  const my = dlgLoading();
+  const my = dlgLoading(back);
   const [d, wp] = await Promise.all([
     tmdb(`/movie/${m.id}`,{language:"en-GB", append_to_response:"credits,release_dates,videos", include_video_language:"en,null"}),
     tmdb(`/movie/${m.id}/watch/providers`)
@@ -505,11 +516,10 @@ async function openFilm(m, rating, back){
   const mine = new Set(S.shown);
   const on = [...(gb.flatrate||[]),...(gb.free||[]),...(gb.ads||[])].filter(p=>mine.has(p.provider_id));
   const uniq = [...new Map(on.map(p=>[p.provider_id,p])).values()];
-  $("dlgBody").innerHTML = `
+  $("dlgBody").innerHTML = `${backBtn(back)}
     ${d.backdrop_path?`<img class="backdrop" src="${IMG}w780${d.backdrop_path}" alt="">`:""}
     <div class="dbody">
       <button class="close" onclick="dlg.close()" aria-label="Close">×</button>
-      ${backBtn(back)}
       <h2>${esc(d.title)}</h2>
       <div class="meta"><span>${(d.release_date||"").slice(0,4)}</span><span>${d.runtime?d.runtime+" min":""}</span>${cert?`<span class="cert">${esc(cert)}</span>`:""}
         <span class="imdb">★ ${rating.r.toFixed(1)} ${rating.src}</span>${rating.votes?`<span>${rating.votes.toLocaleString("en-GB")} votes</span>`:""}</div>
@@ -525,14 +535,13 @@ async function openFilm(m, rating, back){
       ${trailer?`<a href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>`:""}</p>
     </div>`;
   $("favBtn").onclick = () => toggleFav(m, rating);
-  if(back) $("dlgBack").onclick = back.go;
   $("dlgBody").querySelectorAll("[data-pid]").forEach(b => b.onclick = () =>
     openPerson({id:+b.dataset.pid, name:b.dataset.pname, job:b.dataset.job}, self));
 }
 
 // A director's or actor's films: those on your selected services first (sorted by IMDb), the rest listed below
 async function openPerson(p, back){
-  const my = dlgLoading();
+  const my = dlgLoading(back);
   const ids = S.providers.map(x=>x.id).filter(id=>S.active.has(id));
   const [credits, cat, ...pages] = await Promise.all([
     tmdb(`/person/${p.id}/movie_credits`,{language:"en-GB"}),
@@ -555,16 +564,14 @@ async function openPerson(p, back){
   off.sort((a,b)=>(b.release_date||"9999").localeCompare(a.release_date||"9999"));
   const rows = cat ? new Map(cat.rows.map(r=>[r[0],r])) : new Map();
   const self = {label:p.name, go:()=>openPerson(p, back)};
-  $("dlgBody").innerHTML = `<div class="dbody">
+  $("dlgBody").innerHTML = `${backBtn(back)}<div class="dbody">
       <button class="close" onclick="dlg.close()" aria-label="Close">×</button>
-      ${backBtn(back)}
       <h2>${esc(p.name)}</h2>
       <div class="meta">${p.job} · ${rated.length} film${rated.length===1?"":"s"} on your services${rated.length>1?" · sorted by IMDb":""}</div>
       <div class="grid dgrid" id="pgrid"></div>
       ${off.length?`<details class="off"><summary>${off.length} more not on your services</summary><ul class="offlist">${off.slice(0,40).map(m=>
         `<li><span>${esc(m.title)}</span><span>${(m.release_date||"").slice(0,4)||"TBA"}</span></li>`).join("")}${off.length>40?`<li><span>…and ${off.length-40} more</span></li>`:""}</ul></details>`:""}
     </div>`;
-  if(back) $("dlgBack").onclick = back.go;
   if(!rated.length) $("pgrid").outerHTML = `<p class="meta">None on your selected services right now.</p>`;
   rated.forEach(({m, rating}) => {
     const card = addCard(m, rating, $("pgrid"), self);
