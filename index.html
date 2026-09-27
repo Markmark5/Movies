@@ -81,6 +81,7 @@ header.collapsed .gear{top:6px}
 .gear{position:absolute;right:16px;top:14px;background:none;border:0;color:var(--muted);font-size:1.3rem;cursor:pointer}
 header{position:sticky}
 .hwrap{position:relative}
+.warn{color:#ff9c8a;font-size:.8rem;margin-top:6px}
 .dayhead{grid-column:1/-1;margin:10px 0 0;font-size:1rem;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:4px}
 .dayhead:first-child{margin-top:0}
 .note{grid-column:1/-1;color:var(--muted);font-size:.8rem}
@@ -109,6 +110,7 @@ header{position:sticky}
     <button class="gear" id="gear" aria-label="Edit keys">⚙</button>
     <button class="ftoggle" id="ftoggle" aria-expanded="true">Hide filters ▴</button>
   </div>
+  <div class="warn" id="warn" hidden></div>
   <div id="filters">
   <div class="row" id="providers" aria-label="Streaming services"></div>
   <div class="controls">
@@ -164,7 +166,7 @@ const S = {
   tmdb: store("tmdbKey") || DEFAULT_TMDB, omdb: store("omdbKey") || DEFAULT_OMDB,
   allProviders: [], providers: [], shown: JSON.parse(store("shown")||"null"), active: new Set(JSON.parse(store("active")||"null")||[]),
   genres: new Set(), page: 1, totalPages: 1, loading: false, seen: new Set(),
-  imdbCache: JSON.parse(store("imdbCache3")||"{}"),
+  imdbCache: JSON.parse(store("imdbCache3")||"{}"), ratings: {},
   favs: JSON.parse(store("favs")||"{}")
 };
 function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
@@ -181,7 +183,11 @@ async function tmdb(path, params={}){
 }
 
 async function imdbRating(tmdbId){
+  // Daily IMDb ratings file from the snapshot Action first; OMDb only for films not in it
+  const d = S.ratings[tmdbId];
+  if(d) return {r:d[0], id:"tt"+String(d[2]).padStart(7,"0"), votes:d[1]};
   if(S.imdbCache[tmdbId] !== undefined) return S.imdbCache[tmdbId];
+  if(omdbWarned) return undefined;
   try{
     const ext = await tmdb(`/movie/${tmdbId}/external_ids`);
     if(!ext.imdb_id){ S.imdbCache[tmdbId]=null; return null; }
@@ -198,17 +204,20 @@ async function imdbRating(tmdbId){
 
 let omdbWarned=false;
 function omdbError(msg){ if(omdbWarned) return; omdbWarned=true;
-  $("sub").textContent = "IMDb lookup failed: "+(msg||"check OMDb key")+" Showing TMDB scores."; }
+  $("warn").textContent = "IMDb lookup limit reached ("+(msg||"check OMDb key")+"). Films on untracked services show TMDB scores.";
+  $("warn").hidden = false; }
 
 async function init(){
   if(!S.tmdb){ $("setup").hidden=false; return; }
   $("app").hidden=false;
   $("ratingLabel").textContent = S.omdb ? "IMDb" : "Rating";
   try{
-    const [pv, gn] = await Promise.all([
+    const [pv, gn, rt] = await Promise.all([
       tmdb("/watch/providers/movie",{watch_region:"GB"}),
-      tmdb("/genre/movie/list",{language:"en-GB"})
+      tmdb("/genre/movie/list",{language:"en-GB"}),
+      fetch(`data/ratings.json?t=${dayOffset(0)}`).then(r=>r.ok ? r.json() : {}).catch(()=>({}))
     ]);
+    S.ratings = rt;
     S.allProviders = pv.results
       .sort((a,b)=>(a.display_priorities?.GB ?? a.display_priority ?? 999)-(b.display_priorities?.GB ?? b.display_priority ?? 999))
       .map(p=>({id:p.provider_id, name:p.provider_name, label:SHORT[p.provider_name]||p.provider_name, logo:p.logo_path, free:FREE_RE.test(p.provider_name)}));
@@ -313,7 +322,7 @@ async function showArrivals(days){
   if(!data || !(data.items||[]).length){ $("status").textContent="New arrivals start building from the first daily check. Check back tomorrow."; return; }
   const ids = new Set(activeProviderIds().map(String));
   if(!ids.size){ $("status").textContent="Pick at least one service."; return; }
-  const cutoff = dayOffset(-(days-1)), dec = $("decade").value, min = parseFloat($("minRating").value), useImdb = !!S.omdb;
+  const cutoff = dayOffset(-(days-1)), dec = $("decade").value, min = parseFloat($("minRating").value), useImdb = !!S.omdb || !!Object.keys(S.ratings).length;
   const list = [];
   for(const m of data.items){
     const on = Object.entries(m.arrivals||{}).filter(([p,d])=>ids.has(p) && d>=cutoff);
@@ -356,7 +365,7 @@ async function search(reset){
   const ids = activeProviderIds();
   if(!ids.length){ $("status").textContent="Pick at least one service."; $("more").hidden=true; return; }
   const min = parseFloat($("minRating").value);
-  const useImdb = !!S.omdb;
+  const useImdb = !!S.omdb || !!Object.keys(S.ratings).length;
   S.loading = true; $("more").hidden = true; $("status").textContent="Loading…";
   let shown = 0, pagesTried = 0;
   // Keep pulling pages until we have ~12 new films or run out

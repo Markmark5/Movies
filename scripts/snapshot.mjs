@@ -1,6 +1,7 @@
 // Daily snapshot of UK streaming catalogues → data/seen.json + data/arrivals.json
 // Node 20+, no dependencies. Usage: TMDB_API_KEY=... node scripts/snapshot.mjs
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 
 const KEY = (process.env.TMDB_API_KEY || "").trim();
 if (!KEY) { console.error("TMDB_API_KEY is not set."); process.exit(1); }
@@ -82,6 +83,34 @@ async function catalogue(id, range = null) {
   return [first.results, ...rest].flat();
 }
 
+// IMDb ratings for every tracked film, from IMDb's free daily dataset.
+// data/imdb-ids.json caches TMDB id → IMDb number (0 = none), so only new films need a lookup.
+async function buildRatings(seen) {
+  const ids = await readJson("imdb-ids.json", {});
+  const all = [...new Set(Object.values(seen).flatMap(m => Object.keys(m)))];
+  const todo = all.filter(id => !(id in ids));
+  console.log(`IMDb ids: ${all.length - todo.length} cached, ${todo.length} to look up.`);
+  let done = 0;
+  await pool(todo, async id => {
+    try { const x = await tmdb(`/movie/${id}/external_ids`); ids[id] = +(x.imdb_id || "").replace(/^tt/, "") || 0; }
+    catch { /* try again tomorrow */ }
+    if (++done % 2000 === 0) console.log(`  ${done}/${todo.length}`);
+  }, 10);
+  await writeJson("imdb-ids.json", ids);
+
+  const r = await fetch("https://datasets.imdbws.com/title.ratings.tsv.gz");
+  if (!r.ok) throw new Error(`IMDb dataset download failed (${r.status})`);
+  const want = new Map(Object.entries(ids).filter(([, n]) => n).map(([t, n]) => [n, t]));
+  const out = {};
+  for (const line of gunzipSync(Buffer.from(await r.arrayBuffer())).toString("utf8").split("\n")) {
+    const [tc, avg, votes] = line.split("\t");
+    const t = want.get(+tc.slice(2));
+    if (t) out[t] = [+avg, +votes, +tc.slice(2)];
+  }
+  await writeJson("ratings.json", out);
+  console.log(`ratings.json: ${Object.keys(out).length} films with IMDb ratings.`);
+}
+
 async function main() {
   const config = await readJson("providers.json", { extra: [] });
   const seen = await readJson("seen.json", {});
@@ -153,6 +182,8 @@ async function main() {
   await writeJson("seen.json", seen);
   await writeJson("arrivals.json", { generated: today, baselineDate: prevArrivals?.baselineDate || today, items: list });
   if (!(await readJson("providers.json", null))) await writeJson("providers.json", { extra: [] }, true);
+  try { await buildRatings(seen); }
+  catch (e) { console.warn(`Ratings not updated today: ${e.message}`); }
   console.log(`arrivals.json: ${list.length} films in the last ${KEEP_DAYS} days.`);
 }
 
