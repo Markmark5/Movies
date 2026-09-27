@@ -6,6 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1c2140">
 <title>Tonight's Film</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
 <style>
@@ -92,18 +95,24 @@ header{position:sticky}
       <input type="range" id="minRating" min="5" max="8.5" step="0.1" value="6.5" aria-label="Minimum rating">
       <b id="ratingVal">6.5</b>
     </div>
+    <div style="display:flex;gap:6px">
+    <select id="decade" aria-label="Decade">
+      <option value="">Any decade</option><option value="2020">2020s</option><option value="2010">2010s</option><option value="2000">2000s</option><option value="1990">1990s</option><option value="1980">1980s</option><option value="1970">1970s</option><option value="1960">1960s</option><option value="1950">1950s</option><option value="1940">1940s</option><option value="1930">1930s</option>
+    </select>
     <select id="sort" aria-label="Sort">
       <option value="popularity.desc">Popular</option>
       <option value="vote_average.desc">Top rated</option>
       <option value="primary_release_date.desc">Newest</option>
     </select>
+    </div>
   </div>
   <div class="row" id="genres" style="margin-top:10px" aria-label="Genres"></div>
   <div class="toggles">
     <label>Min IMDb votes <select id="minVotes" aria-label="Minimum IMDb votes">
-      <option value="0">Any</option><option value="1000">1k</option>
-      <option value="5000" selected>5k</option><option value="25000">25k</option></select></label>
+      <option value="0">Any</option><option value="1000" selected>1k</option>
+      <option value="5000">5k</option><option value="25000">25k</option></select></label>
     <label><input type="checkbox" id="englishOnly" checked> English only</label>
+    <label><input type="checkbox" id="britishOnly"> British only</label>
     <label><input type="checkbox" id="freeOnly"> Free services only</label>
   </div>
 </header>
@@ -268,9 +277,12 @@ async function search(reset){
       with_watch_monetization_types:"flatrate|free|ads",
       with_original_language: $("englishOnly").checked ? "en" : "",
       with_genres: [...S.genres].join(","),
+      with_origin_country: $("britishOnly").checked ? "GB" : "",
+      "primary_release_date.gte": $("decade").value ? $("decade").value+"-01-01" : "",
+      "primary_release_date.lte": $("decade").value ? (+$("decade").value+9)+"-12-31" : "",
       // TMDB pre-filter a bit below the target so IMDb can decide
       "vote_average.gte": useImdb ? Math.max(0, min-0.8) : min,
-      "vote_count.gte": $("sort").value==="primary_release_date.desc" ? 50 : 200,
+      "vote_count.gte": ($("sort").value==="primary_release_date.desc" || ($("decade").value && +$("decade").value < 1980)) ? 50 : 200,
       sort_by: $("sort").value, include_adult:false, page:S.page
     }).catch(e=>{ $("status").textContent=e.message; return null; });
     if(my!==token || !d) return;
@@ -334,9 +346,13 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",
 let debounce;
 $("minRating").oninput = e => { $("ratingVal").textContent = (+e.target.value).toFixed(1);
   clearTimeout(debounce); debounce = setTimeout(()=>search(true), 400); };
-$("minVotes").value = store("minVotes") || "5000";
+$("minVotes").value = store("minVotes") || "1000";
 $("minVotes").onchange = e => { store("minVotes", e.target.value); search(true); };
-$("sort").onchange = $("englishOnly").onchange = $("freeOnly").onchange = () => search(true);
+$("britishOnly").checked = store("britishOnly")==="1";
+$("decade").value = store("decade") || "";
+$("decade").addEventListener("change", e=>store("decade", e.target.value));
+$("britishOnly").addEventListener("change", e=>store("britishOnly", e.target.checked?"1":"0"));
+$("decade").onchange = $("sort").onchange = $("britishOnly").onchange = $("englishOnly").onchange = $("freeOnly").onchange = () => search(true);
 $("more").onclick = () => search(false);
 $("dlg").addEventListener("click", e=>{ if(e.target.id==="dlg") e.target.close(); });
 $("gear").onclick = () => { $("tmdbKey").value=S.tmdb||""; $("omdbKey").value=S.omdb||""; $("app").hidden=true; $("setup").hidden=false; };
