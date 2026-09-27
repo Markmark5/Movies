@@ -354,7 +354,9 @@ async function showArrivals(days){
     if([...S.genres].some(g=>!(m.genre_ids||[]).includes(g))) continue;
     const yr = +(m.release_date||"").slice(0,4);
     if(dec && !(yr>=+dec && yr<=+dec+9)) continue;
-    list.push({m, date: on.map(x=>x[1]).sort().at(-1), provs: on.map(x=>+x[0])});
+    const shown = new Set(S.shown.map(String));
+    list.push({m, date: on.map(x=>x[1]).sort().at(-1),
+      provs: Object.entries(m.arrivals).filter(([p,d])=>shown.has(p) && d>=cutoff).map(x=>+x[0])});
   }
   list.sort((a,b)=>b.date.localeCompare(a.date) || b.m.vote_count-a.m.vote_count);
   if(data.baselineDate && dayOffset(-7) < data.baselineDate)
@@ -581,7 +583,7 @@ async function openPerson(p, back){
   rated.forEach(({m, rating}) => {
     const card = addCard(m, rating, $("pgrid"), self);
     const ps = rows.get(m.id)?.[7] || [];
-    const logos = ps.filter(id=>ids.includes(id)).map(id=>S.allProviders.find(x=>x.id===id)).filter(Boolean);
+    const logos = ps.filter(id=>S.shown.includes(id)).map(id=>S.allProviders.find(x=>x.id===id)).filter(Boolean);
     if(logos.length) card.insertAdjacentHTML("beforeend", `<div class="plogos">${logos.map(x=>`<img src="${IMG}w92${x.logo}" alt="${esc(x.name)}" title="${esc(x.name)}">`).join("")}</div>`);
   });
 }
