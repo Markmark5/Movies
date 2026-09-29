@@ -237,7 +237,7 @@ async function init(){
     const [pv, gn, rt] = await Promise.all([
       tmdb("/watch/providers/movie",{watch_region:"GB"}),
       tmdb("/genre/movie/list",{language:"en-GB"}),
-      fetch(`data/ratings.json?t=${dayOffset(0)}`).then(r=>r.ok ? r.json() : {}).catch(()=>({}))
+      loadData("ratings").then(r=>r||{})
     ]);
     S.ratings = rt;
     S.allProviders = pv.results
@@ -326,12 +326,25 @@ function showFavourites(){
 }
 const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const dayOffset = n => { const d = new Date(); d.setDate(d.getDate()+n); return ymd(d); };
-let arrivalsData;
-async function loadArrivals(){
-  if(arrivalsData) return arrivalsData;
-  try{ const r = await fetch(`data/arrivals.json?t=${dayOffset(0)}`); if(r.ok) arrivalsData = await r.json(); }catch(e){}
-  return arrivalsData;
+// Daily data files from the snapshot Action. Kept in memory, but re-checked with GitHub once they're
+// 10 minutes old (a tiny "not modified" reply when nothing changed), so an app resumed from the
+// background picks up a new day's check.
+const dataFiles = {};
+async function loadData(name){
+  const f = dataFiles[name] ||= {};
+  if(f.data && Date.now() - f.at < 600000) return f.data;
+  try{ const r = await fetch(`data/${name}.json`, {cache:"no-cache"}); if(r.ok){ f.data = await r.json(); f.at = Date.now(); } }catch(e){}
+  return f.data;
 }
+const loadArrivals = () => loadData("arrivals");
+document.addEventListener("visibilitychange", async () => {
+  if(document.visibilityState !== "visible" || !dataFiles.ratings || Date.now() - dataFiles.ratings.at < 600000) return;
+  const before = dataFiles.arrivals?.data?.generated || dataFiles.ratings.data?.generated;
+  S.ratings = await loadData("ratings") || S.ratings;
+  const a = await loadData("arrivals");
+  // A new day's check has landed: rebuild the current list (unless a popup is open)
+  if(a && before && a.generated !== before && !$("dlg").open) search(true);
+});
 function dayLabel(d){
   if(d===dayOffset(0)) return "Today";
   if(d===dayOffset(-1)) return "Yesterday";
@@ -382,12 +395,7 @@ async function showArrivals(days){
   $("status").textContent = shown ? "" : `No new arrivals match in the last ${days} days. Try lowering the rating or adding a service.`;
 }
 // Top rated: sort the daily catalogue by IMDb rating. Falls back to TMDB's order when a selected service isn't tracked.
-let catalogueData;
-async function loadCatalogue(){
-  if(catalogueData) return catalogueData;
-  try{ const r = await fetch(`data/catalogue.json?t=${dayOffset(0)}`); if(r.ok) catalogueData = await r.json(); }catch(e){}
-  return catalogueData;
-}
+const loadCatalogue = () => loadData("catalogue");
 async function topRated(){
   const my = ++token; S.topMode = false;
   $("grid").innerHTML=""; $("more").hidden=true; $("status").textContent="Loading…";
