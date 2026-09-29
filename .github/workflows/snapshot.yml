@@ -1,8 +1,11 @@
 name: snapshot
 
 on:
+  # GitHub can delay or skip scheduled runs when busy, so there's a backup slot.
+  # A second run on the same day is harmless. Times are UTC (add 1 hour for UK summer time).
   schedule:
-    - cron: "15 5 * * *"
+    - cron: "23 3 * * *"
+    - cron: "47 6 * * *"
   workflow_dispatch:
 
 permissions:
