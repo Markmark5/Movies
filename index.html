@@ -371,7 +371,9 @@ async function showArrivals(days){
     list.push({m, date: on.map(x=>x[1]).sort().at(-1),
       provs: Object.entries(m.arrivals).filter(([p,d])=>shown.has(p) && d>=cutoff).map(x=>+x[0])});
   }
-  list.sort((a,b)=>b.date.localeCompare(a.date) || b.m.vote_count-a.m.vote_count);
+  // Newest day first; within a day, highest IMDb rating first (TMDB score if IMDb has none)
+  const score = m => S.ratings[m.id]?.[0] ?? m.vote_average ?? 0;
+  list.sort((a,b)=>b.date.localeCompare(a.date) || score(b.m)-score(a.m) || b.m.vote_count-a.m.vote_count);
   if(data.baselineDate && dayOffset(-7) < data.baselineDate)
     $("grid").insertAdjacentHTML("beforeend", `<div class="note">Tracking since ${esc(dayLabel(data.baselineDate))}</div>`);
   let lastDay = "", shown = 0;
